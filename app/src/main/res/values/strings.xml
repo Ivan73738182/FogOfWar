@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Fog of War</string>
+    <string name="btn_play">Играть</string>
+    <string name="btn_exit">Выход</string>
+    <string name="title_menu">Fog of War</string>
+    <string name="subtitle_menu">Пиксельная стратегия</string>
+</resources>

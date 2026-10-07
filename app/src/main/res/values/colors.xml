@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_dark">#0F1419</color>
+    <color name="bg_panel">#1A2332</color>
+    <color name="accent_red">#C84040</color>
+    <color name="accent_blue">#4A90D9</color>
+    <color name="text_light">#E8EDF2</color>
+    <color name="text_dim">#8A97A8</color>
+
+    <!-- Цвета карты -->
+    <color name="tile_grass">#3D5A3D</color>
+    <color name="tile_grass_dark">#2F462F</color>
+    <color name="tile_road">#7A6E5A</color>
+    <color name="tile_water">#2A4A6B</color>
+    <color name="tile_rock">#5A5A5A</color>
+</resources>
