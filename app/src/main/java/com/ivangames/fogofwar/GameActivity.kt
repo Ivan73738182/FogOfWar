@@ -5,15 +5,34 @@ import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
+import com.ivangames.fogofwar.game.GameView
 
 class GameActivity : AppCompatActivity() {
+
+    private lateinit var gameView: GameView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_game)
 
         enableFullscreen()
+
+        val container = findViewById<FrameLayout>(R.id.gameContainer)
+        gameView = GameView(this)
+        container.addView(gameView)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Скрываем систему при возврате
+        enableFullscreen()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enableFullscreen()
     }
 
     private fun enableFullscreen() {
