@@ -1,6 +1,8 @@
 package com.ivangames.fogofwar.game
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -22,8 +24,14 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     private val camera = Camera(map)
     private val units = mutableListOf<Unit>()
 
+    // Спрайты танка
+    private var tankUp: Bitmap? = null
+    private var tankDown: Bitmap? = null
+    private var tankLeft: Bitmap? = null
+    private var tankRight: Bitmap? = null
+
     private val tilePaint = Paint()
-    private val unitPaint = Paint().apply { isAntiAlias = true }
+    private val unitPaint = Paint().apply { isAntiAlias = false }  // пиксель-арт: без сглаживания!
     private val selectionPaint = Paint().apply {
         isAntiAlias = true
         style = Paint.Style.STROKE
@@ -37,14 +45,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         color = Color.rgb(80, 200, 255)
     }
 
-    // Ввод — одиночный тап / скролл
     private var touchDownX = 0f
     private var touchDownY = 0f
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var moved = false
 
-    // Зум двумя пальцами
     private var isZooming = false
     private var lastZoomDist = 0f
 
@@ -57,6 +63,18 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     init {
         holder.addCallback(this)
         isFocusable = true
+        loadSprites(context)
+    }
+
+    private fun loadSprites(context: Context) {
+        try {
+            tankUp = BitmapFactory.decodeStream(context.assets.open("units/tank/tank_up.png"))
+            tankDown = BitmapFactory.decodeStream(context.assets.open("units/tank/tank_down.png"))
+            tankLeft = BitmapFactory.decodeStream(context.assets.open("units/tank/tank_left.png"))
+            tankRight = BitmapFactory.decodeStream(context.assets.open("units/tank/tank_right.png"))
+        } catch (e: Exception) {
+            // Если спрайтов нет — рисуем квадратики
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -72,6 +90,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         camera.screenWidth = width.toFloat()
         camera.screenHeight = height.toFloat()
+        camera.updateMinScale()
         units.firstOrNull()?.let { camera.centerOn(it.x, it.y) }
     }
 
@@ -133,26 +152,34 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                     TileType.ROCK -> colorRock
                     TileType.WATER -> colorWater
                 }
-                canvas.drawRect(sx, sy, sx + ts, sy + ts, tilePaint)
+                // +1f — перекрытие, чтобы не было щелей
+                canvas.drawRect(sx, sy, sx + ts + 1f, sy + ts + 1f, tilePaint)
             }
         }
     }
 
     private fun drawUnit(canvas: Canvas, u: Unit) {
         val (sx, sy) = camera.worldToScreen(u.x, u.y)
-        val half = u.type.size * camera.scale / 2f
 
-        unitPaint.color = Color.argb(80, 0, 0, 0)
-        canvas.drawRect(sx - half + 2, sy - half + 2, sx + half + 2, sy + half + 2, unitPaint)
+        val sprite = when (u.direction) {
+            Unit.Direction.UP -> tankUp
+            Unit.Direction.DOWN -> tankDown
+            Unit.Direction.LEFT -> tankLeft
+            Unit.Direction.RIGHT -> tankRight
+        }
 
-        unitPaint.color = u.type.color
-        canvas.drawRect(sx - half, sy - half, sx + half, sy + half, unitPaint)
-
-        unitPaint.color = Color.WHITE
-        unitPaint.style = Paint.Style.STROKE
-        unitPaint.strokeWidth = 2f
-        canvas.drawRect(sx - half, sy - half, sx + half, sy + half, unitPaint)
-        unitPaint.style = Paint.Style.FILL
+        if (sprite != null) {
+            // Размер на экране: 32 * scale (или под размер юнита)
+            val size = u.type.size * camera.scale * 2f  // танк крупнее солдата
+            val half = size / 2f
+            val dst = android.graphics.RectF(sx - half, sy - half, sx + half, sy + half)
+            canvas.drawBitmap(sprite, null, dst, unitPaint)
+        } else {
+            // Fallback — квадратик
+            val half = u.type.size * camera.scale / 2f
+            unitPaint.color = u.type.color
+            canvas.drawRect(sx - half, sy - half, sx + half, sy + half, unitPaint)
+        }
     }
 
     private fun drawSelection(canvas: Canvas, u: Unit) {
@@ -195,7 +222,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                     val d = distance(event)
                     if (lastZoomDist > 0f) {
                         val factor = d / lastZoomDist
-                        // Центр между пальцами — точка фокуса
                         val cx = (event.getX(0) + event.getX(1)) / 2f
                         val cy = (event.getY(0) + event.getY(1)) / 2f
                         camera.zoomBy(factor, cx, cy)
@@ -204,7 +230,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
                     return true
                 }
 
-                // Обычный скролл одним пальцем
                 val dx = event.x - lastTouchX
                 val dy = event.y - lastTouchY
                 if (!moved && (abs(event.x - touchDownX) > 15 || abs(event.y - touchDownY) > 15)) {
@@ -216,9 +241,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
-                // Остался один палец — сбрасываем зум
                 isZooming = false
-                // Переинициализируем lastTouch по оставшемуся пальцу
                 val idx = if (event.actionIndex == 0) 1 else 0
                 lastTouchX = event.getX(idx)
                 lastTouchY = event.getY(idx)
