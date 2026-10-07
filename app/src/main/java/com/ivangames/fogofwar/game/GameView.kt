@@ -170,7 +170,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
 
         if (sprite != null) {
             // Размер на экране: 32 * scale (или под размер юнита)
-            val size = u.type.size * camera.scale * 2f  // танк крупнее солдата
+            val size = u.type.size * camera.scale * 6f  // танк крупнее солдата
             val half = size / 2f
             val dst = android.graphics.RectF(sx - half, sy - half, sx + half, sy + half)
             canvas.drawBitmap(sprite, null, dst, unitPaint)
@@ -269,7 +269,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback,
         val hit = units.firstOrNull { u ->
             val dx = u.x - wx
             val dy = u.y - wy
-            sqrt((dx * dx + dy * dy).toDouble()) < u.type.size
+            sqrt((dx * dx + dy * dy).toDouble()) < u.type.size * 6f
         }
 
         if (hit != null && hit.team == Unit.Team.PLAYER) {
