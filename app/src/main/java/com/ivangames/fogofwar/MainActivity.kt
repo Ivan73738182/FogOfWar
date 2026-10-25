@@ -21,54 +21,46 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// Базовый класс для всех юнитов (чтобы не дублировать код)
-open class Unit(var x: Float, var y: Float) {
-    var targetX = x
-    var targetY = y
-    var isMoving = false
+// Враг теперь тоже танк
+class EnemyTank(var x: Float, var y: Float) {
     var angle = 0f
-    var speed = 4f
-    var isSelected = false
-    var isDead = false
-}
-
-class Soldier(x: Float, y: Float) : Unit(x, y) {
-    var lastShotTime = 0L
-    val fireRate = 1200L
-    val visionRadius = 250f
-}
-
-class Tank(x: Float, y: Float) : Unit(x, y) {
     var turretAngle = 0f
-    var lastShotTime = 0L
-    val fireRate = 800L
-    val visionRadius = 350f
-}
-
-class Enemy(var x: Float, var y: Float) {
     var isDead = false
+    var lastShotTime = 0L
+    val fireRate = 2000L // Враги стреляют медленнее
 }
 
 class Bullet(var x: Float, var y: Float, var dx: Float, var dy: Float, var isEnemy: Boolean)
-private val bullets = mutableListOf<Bullet>()
 
 class GameView(context: Context) : View(context) {
-    // Наши юниты
-    private val tank = Tank(500f, 500f)
-    private val soldier = Soldier(600f, 500f)
-    private val units = listOf(tank, soldier)
-    private var selectedUnit: Unit? = tank // По умолчанию выбран танк
+    private var tankX = 500f
+    private var tankY = 500f
+    private var tankAngle = 0f
+    private var turretAngle = 0f
+    private var targetX = 500f
+    private var targetY = 500f
+    private var isMoving = false
+    private var isSelected = false // Выделен ли наш танк
+    private var lastShotTime = 0L
 
-    private val enemies = mutableListOf<Enemy>()
+    // Настройки (замедлено по просьбе)
+    private val speed = 3f // Было 6f
+    private val turretSpeed = 0.04f // Было 0.2f (теперь башня крутится медленно)
+    private val fireRate = 1000L // Наш танк стреляет раз в секунду
+    private val visionRadius = 350f
+
     private val paint = Paint()
     private val gridPaint = Paint().apply {
         color = Color.parseColor("#1E3A1E")
         strokeWidth = 2f
     }
 
+    private val enemies = mutableListOf<EnemyTank>()
+    private val bullets = mutableListOf<Bullet>()
+
     init {
-        for (i in 0..6) {
-            enemies.add(Enemy(Random.nextFloat() * 1500f + 100f, Random.nextFloat() * 800f + 100f))
+        for (i in 0..5) {
+            enemies.add(EnemyTank(Random.nextFloat() * 1500f + 100f, Random.nextFloat() * 800f + 100f))
         }
     }
 
@@ -85,28 +77,28 @@ class GameView(context: Context) : View(context) {
             canvas.drawLine(0f, y.toFloat(), width.toFloat(), y.toFloat(), gridPaint)
         }
 
-        // 2. Враги
+        // 2. Враги (серые танки)
         for (enemy in enemies) {
-            if (!enemy.isDead) drawEnemy(canvas, enemy)
+            if (!enemy.isDead) {
+                canvas.save()
+                canvas.translate(enemy.x, enemy.y)
+                canvas.rotate(enemy.angle)
+                drawTank(canvas, isEnemy = true, isSelected = false)
+                canvas.restore()
+            }
         }
 
-        // 3. Наши юниты (рисуем в порядке: сначала солдат, потом танк)
-        // Солдат
+        // 3. Наш танк
         canvas.save()
-        canvas.translate(soldier.x, soldier.y)
-        canvas.rotate(soldier.angle)
-        drawSoldier(canvas, soldier.isSelected)
+        canvas.translate(tankX, tankY)
+        // Корпус
+        canvas.save()
+        canvas.rotate(tankAngle)
+        drawTankHull(canvas, isSelected)
         canvas.restore()
-
-        // Танк
+        // Башня
         canvas.save()
-        canvas.translate(tank.x, tank.y)
-        canvas.save()
-        canvas.rotate(tank.angle)
-        drawTankHull(canvas, tank.isSelected)
-        canvas.restore()
-        canvas.save()
-        canvas.rotate(tank.turretAngle)
+        canvas.rotate(turretAngle)
         drawTankTurret(canvas)
         canvas.restore()
         canvas.restore()
@@ -117,14 +109,10 @@ class GameView(context: Context) : View(context) {
             canvas.drawCircle(bullet.x, bullet.y, 5f, paint)
         }
 
-        // 5. Туман войны (вокруг выбранного юнита)
-        val visionX = selectedUnit?.x ?: tank.x
-        val visionY = selectedUnit?.y ?: tank.y
-        val visionRad = if (selectedUnit is Tank) 350f else 250f
-        
+        // 5. Туман
         val gradientPaint = Paint().apply {
             shader = android.graphics.RadialGradient(
-                visionX, visionY, visionRad,
+                tankX, tankY, visionRadius,
                 intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.BLACK),
                 floatArrayOf(0.0f, 0.8f, 1.0f),
                 android.graphics.Shader.TileMode.CLAMP
@@ -135,39 +123,42 @@ class GameView(context: Context) : View(context) {
         updateGame()
     }
 
-    private fun drawEnemy(canvas: Canvas, enemy: Enemy) {
-        val px = 10f
-        paint.color = Color.parseColor("#8B0000")
-        canvas.save()
-        canvas.translate(enemy.x, enemy.y)
-        canvas.drawRect(-3 * px, -3 * px, 3 * px, 3 * px, paint)
-        paint.color = Color.BLACK
+    // Рисуем танк (используется и для врагов, и для нас)
+    private fun drawTank(canvas: Canvas, isEnemy: Boolean, isSelected: Boolean) {
+        val px = 12f
+        val hullColor = if (isEnemy) Color.parseColor("#757575") else Color.parseColor("#4B5320") // Серый или оливковый
+        val turretColor = if (isEnemy) Color.parseColor("#9E9E9E") else Color.parseColor("#5C6B2E")
+        val gunColor = if (isEnemy) Color.parseColor("#424242") else Color.parseColor("#3A401A")
+
+        // Гусеницы
+        paint.color = Color.parseColor("#1A1A1A")
+        canvas.drawRect(-5 * px, -6 * px, -3 * px, 6 * px, paint)
+        canvas.drawRect(3 * px, -6 * px, 5 * px, 6 * px, paint)
+
+        // Корпус
+        paint.color = hullColor
+        canvas.drawRect(-3 * px, -5 * px, 3 * px, 5 * px, paint)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 3f
-        canvas.drawRect(-3 * px, -3 * px, 3 * px, 3 * px, paint)
-        paint.style = Paint.Style.FILL
-        canvas.restore()
-    }
-
-    private fun drawSoldier(canvas: Canvas, isSelected: Boolean) {
-        val px = 8f
-        // Тело
-        paint.color = Color.parseColor("#2E7D32") // Зеленый
-        canvas.drawRect(-2 * px, -3 * px, 2 * px, 3 * px, paint)
-        paint.color = Color.parseColor("#1B5E20") // Темно-зеленый (каска)
-        canvas.drawCircle(0f, -3 * px, 2 * px, paint)
-        // Ружье
         paint.color = Color.BLACK
-        canvas.drawRect(0f, -4 * px, 1f * px, -1 * px, paint)
+        paint.strokeWidth = 4f
+        canvas.drawRect(-3 * px, -5 * px, 3 * px, 5 * px, paint)
+        paint.style = Paint.Style.FILL
 
-        // Выделение (желтая рамка)
-        if (isSelected) {
-            paint.style = Paint.Style.STROKE
-            paint.color = Color.YELLOW
-            paint.strokeWidth = 3f
-            canvas.drawRect(-4 * px, -5 * px, 4 * px, 5 * px, paint)
-            paint.style = Paint.Style.FILL
-        }
+        // Башня
+        paint.color = turretColor
+        canvas.drawCircle(0f, 0f, 2.5f * px, paint)
+        paint.style = Paint.Style.STROKE
+        paint.color = Color.BLACK
+        canvas.drawCircle(0f, 0f, 2.5f * px, paint)
+        paint.style = Paint.Style.FILL
+
+        // Пушка
+        paint.color = gunColor
+        canvas.drawRect(-0.5f * px, -7 * px, 0.5f * px, -2 * px, paint)
+        paint.style = Paint.Style.STROKE
+        paint.color = Color.BLACK
+        canvas.drawRect(-0.5f * px, -7 * px, 0.5f * px, -2 * px, paint)
+        paint.style = Paint.Style.FILL
     }
 
     private fun drawTankHull(canvas: Canvas, isSelected: Boolean) {
@@ -178,7 +169,6 @@ class GameView(context: Context) : View(context) {
 
         paint.color = Color.parseColor("#4B5320")
         canvas.drawRect(-3 * px, -5 * px, 3 * px, 5 * px, paint)
-        
         paint.style = Paint.Style.STROKE
         paint.color = Color.BLACK
         paint.strokeWidth = 4f
@@ -212,75 +202,88 @@ class GameView(context: Context) : View(context) {
     }
 
     private fun updateGame() {
-        // Обновление юнитов
-        for (unit in units) {
-            if (unit.isDead) continue
+        // 1. Движение танка
+        if (isMoving) {
+            val dx = targetX - tankX
+            val dy = targetY - tankY
+            val distance = sqrt(dx * dx + dy * dy)
 
-            // Движение к цели
-            if (unit.isMoving) {
-                val dx = unit.targetX - unit.x
-                val dy = unit.targetY - unit.y
-                val distance = sqrt(dx * dx + dy * dy)
+            if (distance > 10f) {
+                val targetAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
+                var diff = targetAngle - tankAngle
+                while (diff > 180) diff -= 360f
+                while (diff < -180) diff += 360f
+                tankAngle += diff * 0.1f
 
-                if (distance > 10f) {
-                    val targetAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
-                    var diff = targetAngle - unit.angle
-                    while (diff > 180) diff -= 360f
-                    while (diff < -180) diff += 360f
-                    unit.angle += diff * 0.15f
-
-                    unit.x += (dx / distance) * unit.speed
-                    unit.y += (dy / distance) * unit.speed
-                } else {
-                    unit.isMoving = false
-                }
+                tankX += (dx / distance) * speed
+                tankY += (dy / distance) * speed
+            } else {
+                isMoving = false
             }
+        }
 
-            // Логика стрельбы (поиск ближайшего врага в радиусе)
-            var closestEnemy: Enemy? = null
-            var minDist = if (unit is Tank) tank.visionRadius else (unit as Soldier).visionRadius
+        // 2. Поиск цели для нашего танка
+        var closestEnemy: EnemyTank? = null
+        var minDist = visionRadius
 
-            for (enemy in enemies) {
-                if (enemy.isDead) continue
-                val dist = sqrt((enemy.x - unit.x) * (enemy.x - unit.x) + (enemy.y - unit.y) * (enemy.y - unit.y))
-                if (dist < minDist) {
-                    minDist = dist
-                    closestEnemy = enemy
-                }
+        for (enemy in enemies) {
+            if (enemy.isDead) continue
+            val dist = sqrt((enemy.x - tankX) * (enemy.x - tankX) + (enemy.y - tankY) * (enemy.y - tankY))
+            if (dist < minDist) {
+                minDist = dist
+                closestEnemy = enemy
             }
+        }
 
-            if (closestEnemy != null) {
-                val angleToTarget = Math.toDegrees(atan2((closestEnemy.y - unit.y).toDouble(), (closestEnemy.x - unit.x).toDouble())).toFloat() + 90f
-                val rad = Math.toRadians(angleToTarget.toDouble() - 90.0)
+        if (closestEnemy != null) {
+            val angleToTarget = Math.toDegrees(atan2((closestEnemy.y - tankY).toDouble(), (closestEnemy.x - tankX).toDouble())).toFloat() + 90f
+            var diff = angleToTarget - turretAngle
+            while (diff > 180) diff -= 360f
+            while (diff < -180) diff += 360f
+            turretAngle += diff * turretSpeed // Замедленный поворот башни
+
+            if (System.currentTimeMillis() - lastShotTime > fireRate && Math.abs(diff) < 5f) {
+                // СТРЕЛЬБА С КОНЦА ПУШКИ
+                val rad = Math.toRadians(turretAngle.toDouble() - 90.0)
+                // Смещение на кончик ствола (примерно 7 * 12 = 84 пикселя)
+                val gunLength = 84f
+                val startX = tankX + cos(rad).toFloat() * gunLength
+                val startY = tankY + sin(rad).toFloat() * gunLength
                 
-                if (unit is Tank) {
-                    var diff = angleToTarget - unit.turretAngle
-                    while (diff > 180) diff -= 360f
-                    while (diff < -180) diff += 360f
-                    unit.turretAngle += diff * 0.2f
+                bullets.add(Bullet(startX, startY, cos(rad).toFloat() * 15f, sin(rad).toFloat() * 15f, false))
+                lastShotTime = System.currentTimeMillis()
+            }
+        } else {
+            var diff = tankAngle - turretAngle
+            while (diff > 180) diff -= 360f
+            while (diff < -180) diff += 360f
+            turretAngle += diff * 0.05f
+        }
 
-                    if (System.currentTimeMillis() - unit.lastShotTime > unit.fireRate && Math.abs(diff) < 10f) {
-                        val tRad = Math.toRadians(unit.turretAngle.toDouble() - 90.0)
-                        bullets.add(Bullet(unit.x, unit.y, cos(tRad).toFloat() * 15f, sin(tRad).toFloat() * 15f, false))
-                        unit.lastShotTime = System.currentTimeMillis()
-                    }
-                } else {
-                    // Солдат поворачивается всем телом к цели
-                    var diff = angleToTarget - unit.angle
-                    while (diff > 180) diff -= 360f
-                    while (diff < -180) diff += 360f
-                    unit.angle += diff * 0.1f
+        // 3. Враги стреляют (если мы близко)
+        for (enemy in enemies) {
+            if (enemy.isDead) continue
+            val distToTank = sqrt((tankX - enemy.x) * (tankX - enemy.x) + (tankY - enemy.y) * (tankY - enemy.y))
+            if (distToTank < 400f && System.currentTimeMillis() - enemy.lastShotTime > enemy.fireRate) {
+                // Наводим башню врага на нас
+                val angleToTank = Math.toDegrees(atan2((tankY - enemy.y).toDouble(), (tankX - enemy.x).toDouble())).toFloat() + 90f
+                var diff = angleToTank - enemy.turretAngle
+                while (diff > 180) diff -= 360f
+                while (diff < -180) diff += 360f
+                enemy.turretAngle += diff * 0.05f
 
-                    if (System.currentTimeMillis() - (unit as Soldier).lastShotTime > unit.fireRate && Math.abs(diff) < 15f) {
-                        val rad2 = Math.toRadians(unit.angle.toDouble() - 90.0)
-                        bullets.add(Bullet(unit.x, unit.y, cos(rad2).toFloat() * 20f, sin(rad2).toFloat() * 20f, false))
-                        unit.lastShotTime = System.currentTimeMillis()
-                    }
+                if (Math.abs(diff) < 10f) {
+                    val rad = Math.toRadians(enemy.turretAngle.toDouble() - 90.0)
+                    val gunLength = 84f
+                    val startX = enemy.x + cos(rad).toFloat() * gunLength
+                    val startY = enemy.y + sin(rad).toFloat() * gunLength
+                    bullets.add(Bullet(startX, startY, cos(rad).toFloat() * 15f, sin(rad).toFloat() * 15f, true))
+                    enemy.lastShotTime = System.currentTimeMillis()
                 }
             }
         }
 
-        // Пули
+        // 4. Движение пуль
         val bulletsToRemove = mutableListOf<Bullet>()
         for (bullet in bullets) {
             bullet.x += bullet.dx
@@ -289,16 +292,9 @@ class GameView(context: Context) : View(context) {
             if (bullet.x < 0 || bullet.x > width || bullet.y < 0 || bullet.y > height) {
                 bulletsToRemove.add(bullet)
             } else if (bullet.isEnemy) {
-                // Вражеская пуля попадает в наши юниты
-                for (unit in units) {
-                    val dist = sqrt((unit.x - bullet.x) * (unit.x - bullet.x) + (unit.y - bullet.y) * (unit.y - bullet.y))
-                    if (dist < 30f) {
-                        bulletsToRemove.add(bullet)
-                        break
-                    }
-                }
+                val dist = sqrt((tankX - bullet.x) * (tankX - bullet.x) + (tankY - bullet.y) * (tankY - bullet.y))
+                if (dist < 30f) bulletsToRemove.add(bullet)
             } else {
-                // Наша пуля попадает во врагов
                 for (enemy in enemies) {
                     if (enemy.isDead) continue
                     val dist = sqrt((enemy.x - bullet.x) * (enemy.x - bullet.x) + (enemy.y - bullet.y) * (enemy.y - bullet.y))
@@ -320,30 +316,14 @@ class GameView(context: Context) : View(context) {
             val touchX = event.x
             val touchY = event.y
 
-            // 1. Проверяем, не нажали ли мы на юнита (танк или солдат)
-            var clickedUnit: Unit? = null
-            
-            // Проверяем танк
-            if (sqrt((touchX - tank.x) * (touchX - tank.x) + (touchY - tank.y) * (touchY - tank.y)) < 60f) {
-                clickedUnit = tank
-            }
-            // Проверяем солдата
-            else if (sqrt((touchX - soldier.x) * (touchX - soldier.x) + (touchY - soldier.y) * (touchY - soldier.y)) < 40f) {
-                clickedUnit = soldier
-            }
-
-            if (clickedUnit != null) {
-                // Выделяем юнита
-                for (unit in units) unit.isSelected = false
-                clickedUnit.isSelected = true
-                selectedUnit = clickedUnit
-            } else {
-                // Если нажали на карту - едем выбранным юнитом
-                selectedUnit?.let {
-                    it.targetX = touchX
-                    it.targetY = touchY
-                    it.isMoving = true
-                }
+            // 1. Проверяем, нажали ли на наш танк
+            if (sqrt((touchX - tankX) * (touchX - tankX) + (touchY - tankY) * (touchY - tankY)) < 60f) {
+                isSelected = !isSelected // Переключаем выделение (тап по танку)
+            } else if (isSelected) {
+                // Если танк выделен и нажали на карту - едем
+                targetX = touchX
+                targetY = touchY
+                isMoving = true
             }
             invalidate()
             return true
