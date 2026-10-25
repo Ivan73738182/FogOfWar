@@ -22,8 +22,6 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// --- Окружение ---
-
 class Tree(var x: Float, var y: Float) {
     var isDestroyed = false
     val radius = 40f
@@ -45,15 +43,12 @@ class Building(var x: Float, var y: Float) {
         val doorRight = x + doorWidth/2
         
         if (px in left..right && py in top..bottom) {
-            // Проем двери (снизу)
             if (py > bottom - 20f && px in doorLeft..doorRight) return false
             return true
         }
         return false
     }
 }
-
-// --- Юниты ---
 
 open class Unit(var x: Float, var y: Float) {
     var targetX = x
@@ -89,8 +84,6 @@ class EnemyTank(var x: Float, var y: Float) {
 
 class Bullet(var x: Float, var y: Float, var dx: Float, var dy: Float, var isEnemy: Boolean)
 
-// --- Игра ---
-
 class GameView(context: Context) : View(context) {
     private val tank = Tank(500f, 700f)
     private val helicopter = Helicopter(600f, 800f)
@@ -98,10 +91,7 @@ class GameView(context: Context) : View(context) {
     private var selectedUnit: Unit? = tank
 
     private val paint = Paint()
-    private val gridPaint = Paint().apply {
-        color = Color.parseColor("#1E3A1E")
-        strokeWidth = 2f
-    }
+    // Убрали gridPaint, так как клеток больше не будет
 
     private val trees = mutableListOf<Tree>()
     private val buildings = mutableListOf<Building>()
@@ -119,11 +109,8 @@ class GameView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Карта
+        // Карта (только трава, без сетки)
         canvas.drawColor(Color.parseColor("#2E7D32"))
-        val gridSize = 100f
-        for (x in 0..width step gridSize.toInt()) canvas.drawLine(x.toFloat(), 0f, x.toFloat(), height.toFloat(), gridPaint)
-        for (y in 0..height step gridSize.toInt()) canvas.drawLine(0f, y.toFloat(), width.toFloat(), y.toFloat(), gridPaint)
 
         // Здания
         for (b in buildings) drawBuilding(canvas, b)
@@ -131,7 +118,7 @@ class GameView(context: Context) : View(context) {
         // Деревья
         for (t in trees) if (!t.isDestroyed) drawTree(canvas, t)
 
-        // Враги (только видимые)
+        // Враги
         for (enemy in enemies) {
             if (!enemy.isDead && isEnemyVisible(enemy.x, enemy.y)) {
                 canvas.save()
@@ -169,8 +156,6 @@ class GameView(context: Context) : View(context) {
         updateGame()
     }
 
-    // --- Отрисовка ---
-
     private fun drawTree(canvas: Canvas, tree: Tree) {
         paint.color = Color.argb(80, 0, 0, 0)
         canvas.drawOval(tree.x - 30f, tree.y + 20f, tree.x + 30f, tree.y + 40f, paint)
@@ -194,7 +179,6 @@ class GameView(context: Context) : View(context) {
         paint.strokeWidth = 4f
         canvas.drawRect(rect, paint)
         paint.style = Paint.Style.FILL
-        // Дверь
         paint.color = Color.BLACK
         val doorLeft = b.x - b.doorWidth / 2
         canvas.drawRect(doorLeft, rect.bottom - 15f, doorLeft + b.doorWidth, rect.bottom, paint)
@@ -255,8 +239,6 @@ class GameView(context: Context) : View(context) {
             canvas.drawCircle(0f, 0f, 8 * px, paint); paint.style = Paint.Style.FILL
         }
     }
-
-    // --- Логика ---
 
     private fun isEnemyVisible(ex: Float, ey: Float): Boolean {
         for (unit in units) {
